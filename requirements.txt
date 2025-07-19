@@ -10,3 +10,4 @@ geopy==2.4.1
 pycountry==24.6.1
 gunicorn==21.2.0
 requests==2.32.4
+Flask-Compress==1.18

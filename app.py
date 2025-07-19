@@ -4,7 +4,7 @@ import pandas as pd
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 from sklearn.linear_model import LinearRegression
-
+from flask_compress import Compress
 app = Flask(__name__)
 CORS(app)
 
@@ -12,124 +12,92 @@ CORS(app)
 @app.route("/analytics", methods=["GET"])
 def get_analytics_summary():
     try:
-        # Load data
-        df_scaled = pd.read_csv("data/cleaned/university_data_scaled.csv")
         df = pd.read_csv("data/cleaned/university_data.csv")
-
-        df_scaled = df_scaled.replace({True: 1, False: 0})
         df = df.replace({True: 1, False: 0})
 
-        total_universities = len(df)
-
-        # --- Basic KPIs ---
+        # Calculate KPIs
         avg_student_staff_ratio = df["stats_student_staff_ratio"].mean(skipna=True)
         avg_international_students_pct = df["stats_pc_intl_students"].mean(skipna=True)
+
         universities_by_location = (
             df["location"].fillna("Unknown").value_counts().sort_index().to_dict()
         )
 
-        # --- Teaching Score by Year ---
         teaching_score_by_year = (
             df.groupby("year")["scores_teaching"].mean().dropna().round(2).to_dict()
             if "year" in df.columns and "scores_teaching" in df.columns
             else {}
         )
 
-        # --- Scatter Plot Data ---
-        scatter_data = (
-            df[["stats_student_staff_ratio", "scores_teaching", "location"]]
-            .dropna()
-            .rename(
-                columns={
-                    "stats_student_staff_ratio": "stats_student_staff_ratio",
-                    "scores_teaching": "scores_teaching",
-                    "location": "location",
-                }
-            )
-            .to_dict(orient="records")
-        )
+        avg_number_of_students = pd.to_numeric(
+            df["stats_number_students"]
+            .astype(str)
+            .str.replace(",", "", regex=False),
+            errors="coerce"
+        ).mean(skipna=True)
 
-        # --- Student-Specific Analytics ---
-        if "stats_number_students" in df.columns:
-            df["stats_number_students"] = df["stats_number_students"].astype(str)
-            df["stats_number_students_clean"] = pd.to_numeric(
-                df["stats_number_students"].str.replace(",", "", regex=False),
-                errors="coerce",
-            )
-            avg_number_of_students = df["stats_number_students_clean"].mean(skipna=True)
-        else:
-            avg_number_of_students = None
+        avg_female_male_ratio = pd.to_numeric(
+            df["stats_female_male_ratio"], errors="coerce"
+        ).mean(skipna=True)
 
-        if "stats_female_male_ratio" in df.columns:
-            df["stats_female_male_ratio"] = pd.to_numeric(
-                df["stats_female_male_ratio"], errors="coerce"
-            )
-            avg_female_male_ratio = df["stats_female_male_ratio"].mean(skipna=True)
-        else:
-            avg_female_male_ratio = None
+        avg_proportion_of_isr = df["stats_proportion_of_isr"].mean(skipna=True)
 
-        avg_proportion_of_isr = (
-            df["stats_proportion_of_isr"].mean(skipna=True)
-            if "stats_proportion_of_isr" in df.columns
-            else None
-        )
-
+        # 📝 Only student stats + name
         student_stats_raw_data = (
             df[
                 [
+                    "name",
                     "stats_female_male_ratio",
                     "stats_proportion_of_isr",
-                    "stats_number_students_clean",
+                    "stats_number_students"
                 ]
             ]
-            .rename(
-                columns={
-                    "stats_female_male_ratio": "Female:Male Ratio",
-                    "stats_proportion_of_isr": "Proportion of ISR",
-                    "stats_number_students_clean": "Total Students",
-                }
-            )
-            .replace(1.0, pd.NA)
-            .dropna()
+            .rename(columns={
+                "name": "University Name",
+                "stats_female_male_ratio": "Female:Male Ratio",
+                "stats_proportion_of_isr": "Proportion of ISR",
+                "stats_number_students": "Total Students"
+            })
+            .dropna(subset=["University Name"])
             .to_dict(orient="records")
         )
 
-        return jsonify(
-            {
-                "total_universities": total_universities,
-                "avg_student_staff_ratio": (
-                    round(avg_student_staff_ratio, 2)
-                    if avg_student_staff_ratio
-                    else None
-                ),
-                "avg_international_students_pct": (
-                    round(avg_international_students_pct, 2)
-                    if avg_international_students_pct
-                    else None
-                ),
-                "universities_by_location": universities_by_location,
-                "teaching_score_by_year": teaching_score_by_year,
-                "scatter_data": scatter_data,
-                "avg_number_of_students": (
-                    round(avg_number_of_students, 2)
-                    if avg_number_of_students
-                    else "N/A"
-                ),
-                "avg_female_male_ratio": (
-                    round(avg_female_male_ratio, 2) if avg_female_male_ratio else "N/A"
-                ),
-                "avg_proportion_of_isr": (
-                    round(avg_proportion_of_isr * 100, 2)
-                    if avg_proportion_of_isr
-                    else "N/A"
-                ),
-                "student_stats_raw_data": student_stats_raw_data,
-                "raw_data": df.to_dict(orient="records"),
-            }
-        )
+        return jsonify({
+            "total_universities": len(df),
+            "avg_student_staff_ratio": round(avg_student_staff_ratio, 2) if avg_student_staff_ratio else None,
+            "avg_international_students_pct": round(avg_international_students_pct, 2) if avg_international_students_pct else None,
+            "universities_by_location": universities_by_location,
+            "teaching_score_by_year": teaching_score_by_year,
+            "avg_number_of_students": round(avg_number_of_students, 2) if avg_number_of_students else None,
+            "avg_female_male_ratio": round(avg_female_male_ratio, 2) if avg_female_male_ratio else None,
+            "avg_proportion_of_isr": round(avg_proportion_of_isr * 100, 2) if avg_proportion_of_isr else None,
+            "student_stats_raw_data": student_stats_raw_data
+        })
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+@app.route("/scatter_data", methods=["GET"])
+def get_scatter_data():
+    try:
+        df = pd.read_csv("data/cleaned/university_data.csv")
+        scatter_df = (
+            df[["stats_student_staff_ratio", "scores_teaching", "location"]]
+            .dropna()
+            .rename(columns={
+                "stats_student_staff_ratio": "Student-Staff Ratio",
+                "scores_teaching": "Teaching Score",
+                "location": "Location"
+            })
+        )
+        if len(scatter_df) > 1000:
+            scatter_df = scatter_df.sample(1000, random_state=42)
+
+        return jsonify(scatter_df.to_dict(orient="records"))
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 
 
 def predict_next_elements(sequence, n_predictions=4):
