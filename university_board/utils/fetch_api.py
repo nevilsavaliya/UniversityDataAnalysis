@@ -1,7 +1,7 @@
 import requests
 import streamlit as st
 
-API_URL = "http://127.0.0.1:5000"
+API_URL = "https://universitydataanalysis.onrender.com"
 
 @st.cache_data(ttl=60)
 def fetch_summary():
