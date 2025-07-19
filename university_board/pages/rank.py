@@ -2,7 +2,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import requests
 import streamlit as st
-
+from university_board.utils.fetch_api import fetch_university_data
 
 def show():
     st.subheader("🏫 Predict Rank by University Data")
@@ -122,11 +122,7 @@ def show():
 
         with st.spinner("Predicting..."):
             try:
-                response = requests.post(
-                    "http://127.0.0.1:5000/predict_rank_by_data",
-                    json=input_payload,
-                    timeout=30,
-                )
+                response = fetch_university_data(input_payload)
                 if response.status_code != 200:
                     st.error(f"❌ Error: {response.text}")
                     return

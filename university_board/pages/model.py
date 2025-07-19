@@ -2,6 +2,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import requests
 import streamlit as st
+from university_board.utils.fetch_api import fetch_scatter_data, fetch_university_ranks
 
 from university_board.utils.fetch_api import fetch_summary
 
@@ -23,10 +24,7 @@ def show():
     if st.button("🔮 Predict Rank"):
         with st.spinner("Predicting..."):
             try:
-                response = requests.post(
-                    "http://127.0.0.1:5000/predict_rank_by_name",
-                    json={"university_name": selected_university},
-                )
+                response = fetch_university_ranks(selected_university)
                 if response.status_code == 200:
                     prediction = response.json()
                     st.success(
